@@ -21,7 +21,7 @@ export function TaskCategories({ onCategorySelect, selectedCategory, categoryCou
     { id: 'presentation' as TaskCategory, label: 'Presentation', icon: Presentation, count: categoryCounts['presentation'] || 0 },
     { id: 'lab-report' as TaskCategory, label: 'Lab Report', icon: Beaker, count: categoryCounts['lab-report'] || 0 },
     { id: 'lab-final' as TaskCategory, label: 'Lab Final', icon: Microscope, count: categoryCounts['lab-final'] || 0 },
-    { id: 'lab-performance' as TaskCategory, label: 'Lab perform..', icon: Activity, count: categoryCounts['lab-performance'] || 0 },
+    { id: 'lab-performance' as TaskCategory, label: 'Lab-performance', icon: Activity, count: categoryCounts['lab-performance'] || 0 },
     { id: 'documents' as TaskCategory, label: 'Documents', icon: FileText, count: categoryCounts['documents'] || 0 },
     { id: 'blc' as TaskCategory, label: 'BLC', icon: Building, count: categoryCounts['blc'] || 0 },
     { id: 'groups' as TaskCategory, label: 'Groups', icon: Users, count: categoryCounts['groups'] || 0 },
