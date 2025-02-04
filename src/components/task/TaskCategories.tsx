@@ -1,91 +1,182 @@
-import { useState } from 'react';
-import { BookOpen, PenSquare, Presentation, Beaker, Microscope, ListTodo, FileText, Users, Building, ChevronDown, ChevronUp, Activity } from 'lucide-react';
-import type { TaskCategory } from '../../types';
+import { formatDate } from '../utils/dateUtils';
+import type { Task } from '../types';
+import type { Announcement } from '../types/announcement';
 
-interface TaskCategoriesProps {
-  onCategorySelect: (category: TaskCategory | null) => void;
-  selectedCategory: TaskCategory | null;
-  categoryCounts: Record<TaskCategory, number>;
+const TELEGRAM_BOT_TOKEN = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = import.meta.env.VITE_TELEGRAM_CHAT_ID;
+const TELEGRAM_API = TELEGRAM_BOT_TOKEN ? `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}` : '';
+const APP_DOMAIN = 'https://nesttask.vercel.app';
+
+/**
+ * Sends a message to Telegram with optional photo attachment
+ * @param {string} text - The message text to send. Supports HTML formatting
+ * @param {string} [photo] - Optional URL of an image to send with the message
+ * @returns {Promise<boolean>} - Returns true if message was sent successfully, false otherwise
+ * @example
+ * // Send text message
+ * await sendTelegramMessage("Hello world!");
+ * // Send message with photo
+ * await sendTelegramMessage("Check this image!", "https://example.com/image.jpg");
+ */
+export async function sendTelegramMessage(text: string, photo?: string) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    return false;
+  }
+
+  try {
+    console.log('Sending message with:', { TELEGRAM_API, TELEGRAM_CHAT_ID });
+    
+    if (photo) {
+      const requestBody = {
+        chat_id: TELEGRAM_CHAT_ID,
+        message_thread_id: 204,  // Correct topic ID from the URL
+        photo,
+        caption: text,
+        parse_mode: 'HTML',
+      };
+      console.log('Photo message request:', requestBody);
+      
+      const response = await fetch(`${TELEGRAM_API}/sendPhoto`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const responseData = await response.json();
+      console.log('Telegram API response:', responseData);
+
+      if (!response.ok) {
+        throw new Error(`Failed to send Telegram photo message: ${JSON.stringify(responseData)}`);
+      }
+    } else {
+      const requestBody = {
+        chat_id: TELEGRAM_CHAT_ID,
+        message_thread_id: 204,  // Correct topic ID from the URL
+        text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: false,
+      };
+      console.log('Text message request:', requestBody);
+
+      const response = await fetch(`${TELEGRAM_API}/sendMessage`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const responseData = await response.json();
+      console.log('Telegram API response:', responseData);
+
+      if (!response.ok) {
+        throw new Error(`Failed to send Telegram message: ${JSON.stringify(responseData)}`);
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error sending Telegram message:', error);
+    return false;
+  }
 }
 
-export function TaskCategories({ onCategorySelect, selectedCategory, categoryCounts }: TaskCategoriesProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  
-  // Calculate total tasks from all categories
-  const totalTasks = Object.values(categoryCounts).reduce((sum, count) => sum + count, 0);
+/**
+ * Gets the appropriate emoji for a task category
+ * @param {string} category - The task category name
+ * @returns {string} - Returns an emoji representing the category
+ * @example
+ * const emoji = getCategoryEmoji('assignment'); // Returns '📚'
+ */
+const getCategoryEmoji = (category: string) => {
+  switch (category) {
+    case 'presentation': return '👔';
+    case 'assignment': return '📃';
+    case 'quiz': return '📚';
+    case 'lab-report': return '🔬';
+    case 'lab-final': return '🧪';
+    case 'documents': return '📄';
+    case 'blc': return '🗃️';
+    case 'groups': return '👥';
+    default: return '📋';
+  }
+};
 
-  const allCategories = [
-    { id: null, label: 'Total Tasks', icon: ListTodo, count: totalTasks },
-    { id: 'quiz' as TaskCategory, label: 'Quiz', icon: BookOpen, count: categoryCounts['quiz'] || 0 },
-    { id: 'assignment' as TaskCategory, label: 'Assignment', icon: PenSquare, count: categoryCounts['assignment'] || 0 },
-    { id: 'presentation' as TaskCategory, label: 'Presentation', icon: Presentation, count: categoryCounts['presentation'] || 0 },
-    { id: 'lab-report' as TaskCategory, label: 'Lab Report', icon: Beaker, count: categoryCounts['lab-report'] || 0 },
-    { id: 'lab-final' as TaskCategory, label: 'Lab Final', icon: Microscope, count: categoryCounts['lab-final'] || 0 },
-    { id: 'lab-performance' as TaskCategory, label: 'Lab-performance', icon: Activity, count: categoryCounts['lab-performance'] || 0 },
-    { id: 'documents' as TaskCategory, label: 'Documents', icon: FileText, count: categoryCounts['documents'] || 0 },
-    { id: 'blc' as TaskCategory, label: 'BLC', icon: Building, count: categoryCounts['blc'] || 0 },
-    { id: 'groups' as TaskCategory, label: 'Groups', icon: Users, count: categoryCounts['groups'] || 0 },
-  ];
+/**
+ * Sends a task notification to Telegram
+ * @param {Task} task - The task object containing all task details
+ * @returns {Promise<boolean>} - Returns true if notification was sent successfully
+ * @description
+ * Formats and sends a task notification with:
+ * - Task name and category
+ * - Description
+ * - Category and due date
+ * - Link to view full details
+ */
+export async function sendTaskNotification(task: Task) {
+  /**
+   * Processes description text to handle links and formatting
+   * @param {string} text - The raw description text
+   * @returns {string} - Formatted text with HTML links and preserved line breaks
+   */
+  const processDescription = (text: string) => {
+    // Replace markdown-style links with HTML links
+    const withLinks = text.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2">$1</a>');
+    // Preserve line breaks
+    return withLinks.replace(/\n/g, '\n');
+  };
 
-  // Show first 6 categories when collapsed
-  const visibleCategories = isExpanded ? allCategories : allCategories.slice(0, 6);
-  const hasMoreCategories = allCategories.length > 6;
+  const message = `
+🎯 <b>${task.name}</b>
 
-  return (
-    <div className="mb-8">
-      <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Categories</h2>
-      <div className="space-y-3">
-        {/* Grid for categories */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-3 gap-3">
-          {visibleCategories.map(({ id, label, icon: Icon, count }) => (
-            <button
-              key={id || 'total'}
-              onClick={() => onCategorySelect(id)}
-              className={`
-                flex items-center gap-2 p-3 rounded-xl transition-all duration-200
-                ${selectedCategory === id
-                  ? 'bg-blue-600 text-white shadow-lg scale-[1.02]'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                }
-              `}
-            >
-              <div className={`
-                p-2 rounded-lg
-                ${selectedCategory === id
-                  ? 'bg-blue-500/20'
-                  : 'bg-blue-50 dark:bg-blue-900/20'
-                }
-              `}>
-                <Icon className="w-5 h-5" />
-              </div>
-              <div className="flex-1 text-left">
-                <div className="text-sm font-medium">{label}</div>
-                <div className="text-xs opacity-80">{count} tasks</div>
-              </div>
-            </button>
-          ))}
-        </div>
+💬 <b>Description:</b>
+${processDescription(task.description)}
 
-        {/* Show more/less button */}
-        {hasMoreCategories && (
-          <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="w-full flex items-center justify-center gap-2 py-2 text-sm text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-colors"
-          >
-            {isExpanded ? (
-              <>
-                <ChevronUp className="w-4 h-4" />
-                Show Less Categories
-              </>
-            ) : (
-              <>
-                <ChevronDown className="w-4 h-4" />
-                Show More Categories
-              </>
-            )}
-          </button>
-        )}
-      </div>
-    </div>
-  );
+🏷️ <b>Category:</b> #${task.category}
+📅 <b>Due Date:</b> ${formatDate(new Date(task.dueDate), 'MMMM d, yyyy')}
+
+
+🌐 <b><a href="${APP_DOMAIN}">View full details</a></b>`;
+
+  return sendTelegramMessage(message);
+}
+
+/**
+ * Sends an announcement notification to Telegram
+ * @param {Announcement} announcement - The announcement object containing title and content
+ * @returns {Promise<boolean>} - Returns true if announcement was sent successfully
+ * @description
+ * Formats and sends an announcement with:
+ * - Professional header with NestTask branding
+ * - Announcement title and content
+ * - Link to view more details
+ * - Professional footer
+ */
+export async function sendAnnouncementNotification(announcement: Announcement) {
+  // Try to find an image URL in the announcement content
+  const imageUrl = announcement.content.match(/https?:\/\/[^\s]+\.(jpg|jpeg|png|gif|webp)/i)?.[0];
+
+  const message = `
+
+🎯 <b>${announcement.title}</b>
+
+${announcement.content}
+
+
+🌐 <b><a href="${APP_DOMAIN}">View full details</a></b>`;
+
+  return sendTelegramMessage(message, imageUrl);
+}
+
+/**
+ * Test function to verify Telegram messaging functionality
+ * @returns {Promise<boolean>} - Returns true if test message was sent successfully
+ * @description Sends a simple test message to verify bot token, chat ID, and permissions
+ */
+export async function testTelegramMessage() {
+  const result = await sendTelegramMessage('Test message from NestTask');
+  console.log('Test message result:', result);
+  return result;
 }
